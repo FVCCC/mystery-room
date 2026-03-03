@@ -4,7 +4,13 @@
  */
 
 const roomManager = require('./roomManager');
-const gameEngine = require('./gameEngine');
+const gameEngine  = require('./gameEngine');
+const aiMaster    = require('./aiMaster');
+const trpgEngine  = require('./trpgEngine');
+const trpgSave    = require('./trpgSave');
+
+// 战役状态 Map<roomId, campaign>
+const campaigns = new Map();
 
 function registerSocketEvents(io) {
 
@@ -262,6 +268,272 @@ function registerSocketEvents(io) {
       console.log(`[房间] ${player.nickname} 将房间 ${player.roomId} 改名为「${result.room.roomName}」`);
     });
 
+    // ════════════════════════════════════════════════════════
+    //  TRPG / DND AI 跑团 事件
+    // ════════════════════════════════════════════════════════
+
+    // 获取可选场景+种族+职业数据
+    socket.on('trpg_get_data', () => {
+      socket.emit('trpg_data', {
+        scenarios: trpgEngine.STORY_SCENARIOS,
+        races:     trpgEngine.RACES,
+        classes:   trpgEngine.CLASSES,
+        backgrounds: trpgEngine.BACKGROUNDS,
+        pointBuyCost: trpgEngine.POINT_BUY_COST,
+        pointBuyBudget: trpgEngine.POINT_BUY_BUDGET,
+        skillMap: trpgEngine.SKILL_MAP,
+        classSkillCount: trpgEngine.CLASS_SKILL_COUNT
+      });
+    });
+
+    // 创建跑团战役（房主选定场景后触发）
+    socket.on('trpg_create', (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const room = roomManager.getRoom(player.roomId);
+      if (!room || room.ownerId !== socket.id) {
+        socket.emit('error_msg', { message: '只有房主才能创建战役' });
+        return;
+      }
+      const campaign = trpgEngine.createCampaign(data.scenarioId || 'dungeon_classic', player.roomId, player.nickname);
+      campaigns.set(player.roomId, campaign);
+      room.roomType = 'trpg';
+      io.to(player.roomId).emit('trpg_campaign_created', { campaign: sanitizeCampaign(campaign) });
+      console.log(`[TRPG] ${player.nickname} 创建战役「${campaign.title}」`);
+    });
+
+    // 提交角色创建
+    socket.on('trpg_set_character', (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign) { socket.emit('error_msg', { message: '战役未创建' }); return; }
+
+      try {
+        const character = trpgEngine.createCharacter(data);
+        // 更新或添加玩家
+        const idx = campaign.players.findIndex(p => p.socketId === socket.id);
+        if (idx !== -1) {
+          campaign.players[idx].character = character;
+          campaign.players[idx].nickname  = player.nickname;
+        } else {
+          campaign.players.push({ socketId: socket.id, nickname: player.nickname, avatar: player.avatar, character });
+        }
+        io.to(player.roomId).emit('trpg_campaign_updated', { campaign: sanitizeCampaign(campaign) });
+        socket.emit('trpg_character_set', { character });
+        console.log(`[TRPG] ${player.nickname} 创建角色：${character.name}`);
+      } catch (e) {
+        socket.emit('error_msg', { message: e.message });
+      }
+    });
+
+    // 开始战役（房主触发，AI生成开场白）
+    socket.on('trpg_start', async () => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign) return;
+      const room = roomManager.getRoom(player.roomId);
+      if (!room || room.ownerId !== socket.id) { socket.emit('error_msg', { message: '只有房主才能开始' }); return; }
+
+      campaign.status = 'playing';
+      io.to(player.roomId).emit('trpg_started', { campaign: sanitizeCampaign(campaign) });
+      io.to(player.roomId).emit('trpg_dm_typing', { typing: true });
+
+      try {
+        const opening = await aiMaster.getOpeningNarration(campaign);
+        campaign.history.push({ role:'dm', content: opening, time: Date.now() });
+        campaign.lastActivity = Date.now();
+        io.to(player.roomId).emit('trpg_dm_message', { content: opening, time: Date.now() });
+      } catch (e) {
+        io.to(player.roomId).emit('trpg_dm_message', { content: `⚠️ AI DM 连接失败：${e.message}`, time: Date.now() });
+      } finally {
+        io.to(player.roomId).emit('trpg_dm_typing', { typing: false });
+      }
+    });
+
+    // 玩家行动（AI回应）
+    socket.on('trpg_action', async (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign || campaign.status !== 'playing') return;
+
+      const action = (data.action || '').trim().substring(0, 500);
+      if (!action) return;
+
+      // 广播玩家行动给所有人
+      io.to(player.roomId).emit('trpg_player_action', {
+        socketId: socket.id, nickname: player.nickname, avatar: player.avatar,
+        action, time: Date.now()
+      });
+
+      campaign.history.push({ role:'player', playerName: player.nickname, content: action, time: Date.now() });
+
+      // 找角色信息（用于PC名称）
+      const pc = campaign.players.find(p => p.socketId === socket.id);
+      const charName = pc && pc.character ? pc.character.name : player.nickname;
+
+      io.to(player.roomId).emit('trpg_dm_typing', { typing: true });
+
+      try {
+        const response = await aiMaster.getDMResponse(campaign, action, charName);
+        const cleaned  = trpgEngine.cleanAIResponse(response);
+        const directives = trpgEngine.parseAIDirectives(response);
+
+        campaign.history.push({ role:'dm', content: cleaned, time: Date.now() });
+        campaign.lastActivity = Date.now();
+
+        // 处理指令
+        for (const d of directives) {
+          if (d.type === 'xp') {
+            campaign.players.forEach(p => {
+              if (p.character) { p.character.xp += d.amount; checkLevelUp(p.character, player.roomId, io); }
+            });
+          }
+          if (d.type === 'loot') campaign.loot.push(d.item);
+          if (d.type === 'check') {
+            io.to(player.roomId).emit('trpg_check_required', { skill: d.skill, dc: d.dc, requestedBy: player.roomId });
+          }
+        }
+
+        io.to(player.roomId).emit('trpg_dm_message', { content: cleaned, directives, time: Date.now() });
+
+        // 每 5 条自动保存
+        if (campaign.history.length % 5 === 0) trpgSave.saveCampaign(campaign);
+
+      } catch (e) {
+        io.to(player.roomId).emit('trpg_dm_message', { content: `⚠️ AI 响应失败：${e.message}`, time: Date.now() });
+      } finally {
+        io.to(player.roomId).emit('trpg_dm_typing', { typing: false });
+      }
+    });
+
+    // 掷骰子（/roll d20+5 等）
+    socket.on('trpg_roll', (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+
+      const notation = (data.notation || 'd20').trim();
+      const result   = trpgEngine.rollDice(notation);
+      if (!result) { socket.emit('error_msg', { message: `无效骰子格式：${notation}` }); return; }
+
+      // 暴击/大失败判断
+      let special = '';
+      if (result.sides === 20 && result.rolls[0] === 20) special = '暴击！';
+      if (result.sides === 20 && result.rolls[0] === 1)  special = '大失败！';
+
+      io.to(player.roomId).emit('trpg_dice_result', {
+        socketId: socket.id, nickname: player.nickname, avatar: player.avatar,
+        notation: result.notation, rolls: result.rolls, modifier: result.modifier,
+        total: result.total, special, time: Date.now()
+      });
+    });
+
+    // 技能检定（带修正）
+    socket.on('trpg_skill_check', (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+
+      const pc = campaign && campaign.players.find(p => p.socketId === socket.id);
+      const char = pc && pc.character;
+      const skill = data.skill || '感知';
+      const stat  = trpgEngine.SKILL_MAP[skill] || 'WIS';
+      const isProficient = char && char.skills && char.skills.includes(skill);
+      const modifier = char
+        ? trpgEngine.getModifier(char.stats[stat]) + (isProficient ? char.proficiencyBonus : 0)
+        : 0;
+
+      const r = trpgEngine.rollD20(modifier, data.advantage || 0);
+      const dc = data.dc || 0;
+      const success = dc === 0 ? null : r.total >= dc;
+
+      io.to(player.roomId).emit('trpg_check_result', {
+        socketId: socket.id, nickname: player.nickname, avatar: player.avatar,
+        skill, stat, modifier, roll: r.roll, total: r.total,
+        dc, success, isCritical: r.isCritical, isFumble: r.isFumble, time: Date.now()
+      });
+    });
+
+    // 手动保存战役
+    socket.on('trpg_save', () => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign) return;
+      const res = trpgSave.saveCampaign(campaign);
+      socket.emit('trpg_saved', res);
+    });
+
+    // 导出战役文本
+    socket.on('trpg_export', () => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign) return;
+      const text = trpgSave.exportAsText(campaign);
+      socket.emit('trpg_export_data', { text, title: campaign.title });
+    });
+
+    // DM 更新场景描述
+    socket.on('trpg_update_scene', (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign) return;
+      const room = roomManager.getRoom(player.roomId);
+      if (room && room.ownerId !== socket.id) return;
+
+      campaign.currentScene  = (data.scene  || campaign.currentScene).substring(0, 200);
+      campaign.sessionNotes  = (data.notes  || campaign.sessionNotes).substring(0, 500);
+      if (data.chapter) campaign.chapter = parseInt(data.chapter) || campaign.chapter;
+
+      io.to(player.roomId).emit('trpg_scene_updated', {
+        scene: campaign.currentScene, notes: campaign.sessionNotes, chapter: campaign.chapter
+      });
+    });
+
+    // HP 修改
+    socket.on('trpg_hp_change', (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign) return;
+      const pc = campaign.players.find(p => p.socketId === socket.id);
+      if (!pc || !pc.character) return;
+
+      if (data.type === 'damage') trpgEngine.applyDamage(pc.character, parseInt(data.amount) || 0);
+      if (data.type === 'heal')   trpgEngine.healCharacter(pc.character, parseInt(data.amount) || 0);
+      if (data.type === 'set')    pc.character.hp.current = Math.max(0, Math.min(pc.character.hp.max, parseInt(data.amount) || 0));
+
+      io.to(player.roomId).emit('trpg_campaign_updated', { campaign: sanitizeCampaign(campaign) });
+    });
+
+    // 生成 NPC
+    socket.on('trpg_gen_npc', async (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (!campaign) return;
+
+      try {
+        const npc = await aiMaster.generateNPC(campaign, data.hint || '一个神秘的路人');
+        campaign.npcs.push({ name: data.hint, description: npc, addedAt: Date.now() });
+        socket.emit('trpg_npc_generated', { npc });
+      } catch (e) {
+        socket.emit('error_msg', { message: `NPC生成失败：${e.message}` });
+      }
+    });
+
+    // 获取战役当前状态
+    socket.on('trpg_get_campaign', () => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) return;
+      const campaign = campaigns.get(player.roomId);
+      if (campaign) socket.emit('trpg_campaign_created', { campaign: sanitizeCampaign(campaign) });
+    });
+
     // ─── 再来一局 ─────────────────────────────────────────────
     socket.on('play_again', () => {
       const player = roomManager.getPlayer(socket.id);
@@ -358,6 +630,48 @@ function getRoomPublicData(room) {
       isOwner: p.socketId === room.ownerId
     }))
   };
+}
+
+// ── TRPG 辅助函数 ─────────────────────────────────────────────
+
+// 清理战役数据（去掉循环引用等）
+function sanitizeCampaign(c) {
+  return {
+    campaignId:   c.campaignId,
+    title:        c.title,
+    setting:      c.setting,
+    currentScene: c.currentScene,
+    chapter:      c.chapter,
+    sessionNotes: c.sessionNotes,
+    status:       c.status,
+    loot:         c.loot,
+    npcs:         c.npcs,
+    createdAt:    c.createdAt,
+    lastActivity: c.lastActivity,
+    players: (c.players || []).map(p => ({
+      socketId:  p.socketId,
+      nickname:  p.nickname,
+      avatar:    p.avatar,
+      character: p.character || null
+    }))
+  };
+}
+
+// 检查是否升级
+function checkLevelUp(character, roomId, io) {
+  const { levelUp } = require('./trpgEngine');
+  const xpThresholds = [0,300,900,2700,6500,14000,23000,34000,48000,64000];
+  const nextLevel = character.level + 1;
+  if (nextLevel <= 20 && character.xp >= (xpThresholds[nextLevel - 1] || Infinity)) {
+    const result = levelUp(character);
+    if (result.leveled) {
+      io.to(roomId).emit('trpg_level_up', {
+        characterName: character.name,
+        newLevel: result.level,
+        hpGain: result.hpGain
+      });
+    }
+  }
 }
 
 module.exports = { registerSocketEvents };

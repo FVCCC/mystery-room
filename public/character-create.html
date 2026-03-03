@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>创建角色 · DND 跑团</title>
+<link rel="stylesheet" href="/css/global.css">
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/socket-client.js"></script>
+<style>
+:root{--gold:#f5c518;--dark-bg:#1a1a2e;--card-bg:#16213e;--border:#2a3a5e;--text:#e0e6f0;--accent:#7c6af0;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--dark-bg);color:var(--text);font-family:'Microsoft YaHei',sans-serif;min-height:100vh}
+.page-header{background:linear-gradient(135deg,#1a1a2e,#0f3460);padding:16px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border)}
+.page-header h1{font-size:1.3rem;color:var(--gold)}
+.page-header .back-btn{padding:6px 14px;background:transparent;border:1px solid var(--border);color:var(--text);border-radius:6px;cursor:pointer;font-size:.85rem}
+.page-header .back-btn:hover{border-color:var(--accent);color:var(--accent)}
+.wizard{max-width:860px;margin:0 auto;padding:24px 16px}
+.steps{display:flex;gap:8px;margin-bottom:28px;overflow-x:auto;padding-bottom:4px}
+.step{padding:8px 16px;border-radius:20px;font-size:.8rem;font-weight:600;background:var(--card-bg);border:1px solid var(--border);cursor:pointer;white-space:nowrap;transition:.2s}
+.step.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.step.done{background:#1e3a3a;border-color:#2ecc71;color:#2ecc71}
+.panel{display:none;animation:fadeIn .3s}
+.panel.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.panel-title{font-size:1.2rem;color:var(--gold);margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+/* 种族/职业选项卡片 */
+.option-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:20px}
+.option-card{background:var(--card-bg);border:2px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;transition:.2s;position:relative}
+.option-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.option-card.selected{border-color:var(--gold);background:#1e1a3a}
+.option-card .icon{font-size:2rem;margin-bottom:8px}
+.option-card h3{font-size:.95rem;color:var(--gold);margin-bottom:4px}
+.option-card p{font-size:.78rem;color:#8899bb;line-height:1.4}
+.option-card .bonus{font-size:.75rem;color:#7cd67c;margin-top:6px}
+.option-card .check{position:absolute;top:8px;right:8px;color:var(--gold);font-size:1.1rem;display:none}
+.option-card.selected .check{display:block}
+/* 属性购买 */
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.stat-row{background:var(--card-bg);border-radius:8px;padding:12px;text-align:center;border:1px solid var(--border)}
+.stat-row label{font-size:.75rem;color:#8899bb;display:block;margin-bottom:4px}
+.stat-row .stat-val{font-size:1.5rem;font-weight:bold;color:var(--gold)}
+.stat-row .stat-mod{font-size:.8rem;color:#aaa}
+.stat-row .stat-bonus{font-size:.7rem;color:#7cd67c}
+.stat-buttons{display:flex;justify-content:center;gap:6px;margin-top:6px}
+.stat-btn{width:26px;height:26px;border-radius:50%;border:none;cursor:pointer;font-size:.9rem;font-weight:bold}
+.stat-btn.minus{background:#3a1a1a;color:#ff6b6b}
+.stat-btn.plus{background:#1a3a1a;color:#7cd67c}
+.stat-btn:disabled{opacity:.3;cursor:default}
+.points-left{text-align:center;margin-bottom:16px;font-size:.95rem}
+.points-left span{font-size:1.3rem;font-weight:bold;color:var(--gold)}
+/* 技能选择 */
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:16px}
+.skill-chip{padding:7px 10px;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:.8rem;transition:.2s;display:flex;align-items:center;gap:6px}
+.skill-chip:hover{border-color:var(--accent)}
+.skill-chip.selected{background:#1e1a3a;border-color:var(--gold);color:var(--gold)}
+.skill-chip .stat-tag{font-size:.65rem;color:#8899bb}
+/* 表单 */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:.85rem;color:#8899bb;margin-bottom:5px}
+.form-group input,.form-group textarea,.form-group select{width:100%;background:#0f1a2e;border:1px solid var(--border);border-radius:6px;padding:9px 12px;color:var(--text);font-size:.9rem;font-family:inherit;transition:.2s}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:var(--accent)}
+.form-group textarea{resize:vertical;min-height:80px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* 角色预览 */
+.char-preview{background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
+.char-preview h2{font-size:1.3rem;color:var(--gold);margin-bottom:4px}
+.char-preview .subtitle{font-size:.85rem;color:#8899bb;margin-bottom:12px}
+.stat-summary{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px}
+.stat-box{background:#0f1a2e;border-radius:6px;padding:6px;text-align:center}
+.stat-box .n{font-size:.7rem;color:#8899bb}
+.stat-box .v{font-size:1.1rem;font-weight:bold;color:var(--gold)}
+.stat-box .m{font-size:.7rem;color:#aaa}
+.info-row{display:flex;gap:16px;flex-wrap:wrap;font-size:.83rem}
+.info-row span{color:#8899bb}
+.info-row strong{color:var(--text)}
+/* 导航按钮 */
+.nav-btns{display:flex;justify-content:space-between;margin-top:20px}
+.btn{padding:10px 24px;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;font-weight:600;transition:.2s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:#6a5ae0}
+.btn-secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.4;cursor:default}
+.info-box{background:#1a2a1a;border:1px solid #2e6e2e;border-radius:8px;padding:12px;font-size:.83rem;color:#8ebb8e;margin-bottom:14px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="page-header">
+  <button class="back-btn" onclick="history.back()">← 返回</button>
+  <h1>⚔️ 创建你的冒险者</h1>
+  <span style="margin-left:auto;font-size:.8rem;color:#8899bb" id="roomIdLabel"></span>
+</div>
+
+<div class="wizard">
+  <div class="steps">
+    <div class="step active" data-step="0">1. 种族</div>
+    <div class="step" data-step="1">2. 职业</div>
+    <div class="step" data-step="2">3. 属性</div>
+    <div class="step" data-step="3">4. 技能</div>
+    <div class="step" data-step="4">5. 背景故事</div>
+    <div class="step" data-step="5">6. 确认</div>
+  </div>
+
+  <!-- Step 0: 种族 -->
+  <div class="panel active" id="panel0">
+    <div class="panel-title">🧝 选择种族</div>
+    <div class="option-grid" id="raceGrid"></div>
+    <div class="nav-btns"><div></div><button class="btn btn-primary" onclick="nextStep(0)">下一步 →</button></div>
+  </div>
+
+  <!-- Step 1: 职业 -->
+  <div class="panel" id="panel1">
+    <div class="panel-title">⚔️ 选择职业</div>
+    <div class="option-grid" id="classGrid"></div>
+    <div class="nav-btns">
+      <button class="btn btn-secondary" onclick="prevStep(1)">← 上一步</button>
+      <button class="btn btn-primary" onclick="nextStep(1)">下一步 →</button>
+    </div>
+  </div>
+
+  <!-- Step 2: 属性点分配 -->
+  <div class="panel" id="panel2">
+    <div class="panel-title">🎯 分配属性点（点数购买法）</div>
+    <div class="info-box">💡 你有 <strong id="totalPoints">27</strong> 点可分配。基础值 8，可购买至 15。种族加值将在确认时自动叠加。数值越高消耗越多点数。</div>
+    <div class="points-left">剩余点数：<span id="pointsLeft">27</span></div>
+    <div class="stats-grid" id="statsGrid"></div>
+    <div class="nav-btns">
+      <button class="btn btn-secondary" onclick="prevStep(2)">← 上一步</button>
+      <button class="btn btn-primary" onclick="nextStep(2)">下一步 →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: 技能 -->
+  <div class="panel" id="panel3">
+    <div class="panel-title">🎓 选择熟练技能</div>
+    <div class="info-box">根据你的职业，可选择 <strong id="skillCount">2</strong> 项技能。熟练技能在检定时额外加上熟练加值（+2）。</div>
+    <div class="skills-grid" id="skillsGrid"></div>
+    <div class="nav-btns">
+      <button class="btn btn-secondary" onclick="prevStep(3)">← 上一步</button>
+      <button class="btn btn-primary" onclick="nextStep(3)">下一步 →</button>
+    </div>
+  </div>
+
+  <!-- Step 4: 背景故事 -->
+  <div class="panel" id="panel4">
+    <div class="panel-title">📖 角色背景与外貌</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>角色名称 *</label>
+        <input type="text" id="charName" placeholder="例如：阿拉贡、艾拉亚" maxlength="20">
+      </div>
+      <div class="form-group">
+        <label>背景</label>
+        <select id="background">
+          <option value="outlander">流浪者</option>
+          <option value="soldier">士兵</option>
+          <option value="acolyte">服侍者</option>
+          <option value="criminal">罪犯</option>
+          <option value="folk_hero">平民英雄</option>
+          <option value="noble">贵族</option>
+          <option value="sage">学者</option>
+          <option value="charlatan">骗子</option>
+          <option value="hermit">隐士</option>
+          <option value="sailor">水手</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>阵营</label>
+        <select id="alignment">
+          <option value="守序善良">守序善良（骑士）</option>
+          <option value="中立善良" selected>中立善良（治愈者）</option>
+          <option value="混乱善良">混乱善良（流浪者）</option>
+          <option value="守序中立">守序中立（裁判者）</option>
+          <option value="真正中立">真正中立（旁观者）</option>
+          <option value="混乱中立">混乱中立（自由者）</option>
+          <option value="守序邪恶">守序邪恶（独裁者）</option>
+          <option value="中立邪恶">中立邪恶（权谋者）</option>
+          <option value="混乱邪恶">混乱邪恶（破坏者）</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>年龄 / 性别 / 体型（外貌描述）</label>
+        <input type="text" id="appearance" placeholder="例如：25岁男性，金色长发，绿色眼睛" maxlength="100">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>背景故事（你是谁？为何踏上冒险之旅？）</label>
+      <textarea id="backstory" placeholder="例如：我曾是一名士兵，经历了残酷的战争后，我开始寻找失散多年的家人……" maxlength="400"></textarea>
+      <div style="text-align:right;font-size:.75rem;color:#8899bb;margin-top:3px"><span id="backstoryCount">0</span>/400</div>
+    </div>
+    <div class="nav-btns">
+      <button class="btn btn-secondary" onclick="prevStep(4)">← 上一步</button>
+      <button class="btn btn-primary" onclick="nextStep(4)">下一步 →</button>
+    </div>
+  </div>
+
+  <!-- Step 5: 确认 -->
+  <div class="panel" id="panel5">
+    <div class="panel-title">✅ 确认角色信息</div>
+    <div class="char-preview" id="charPreview"></div>
+    <div class="nav-btns">
+      <button class="btn btn-secondary" onclick="prevStep(5)">← 修改</button>
+      <button class="btn btn-primary" id="confirmBtn" onclick="confirmCharacter()">⚔️ 确认并进入战役！</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 数据（从服务器动态获取） ─────────────────────────────
+let gameData = null;
+let selectedRace = null;
+let selectedClass = null;
+let selectedSkills = [];
+let baseStats = { STR:8, DEX:8, CON:8, INT:8, WIS:8, CHA:8 };
+const STAT_NAMES = { STR:'力量', DEX:'敏捷', CON:'体质', INT:'智力', WIS:'感知', CHA:'魅力' };
+const STAT_KEYS  = ['STR','DEX','CON','INT','WIS','CHA'];
+let currentStep  = 0;
+
+// ── 初始化 ───────────────────────────────────────────────
+if (!Session.isValid() || !Session.roomId) {
+  window.location.href = '/lobby.html';
+}
+document.getElementById('roomIdLabel').textContent = `房间 ${Session.roomId}`;
+
+const socket = SocketClient.connect();
+
+socket.on('connect', () => {
+  SocketClient.emit('join_lobby', { nickname: Session.nickname, avatar: Session.avatar });
+});
+
+// join_lobby 后会收到 room_list_update，然后加入房间
+let joinedRoom = false;
+socket.on('room_list_update', () => {
+  if (!joinedRoom) {
+    joinedRoom = true;
+    SocketClient.emit('join_room', { roomId: Session.roomId });
+  }
+});
+
+socket.on('room_joined', () => {
+  SocketClient.emit('trpg_get_data');
+});
+
+socket.on('trpg_data', (data) => {
+  gameData = data;
+  renderRaceGrid();
+  renderClassGrid();
+  renderStatsGrid();
+  renderSkillsGrid();
+});
+
+socket.on('trpg_character_set', ({ character }) => {
+  sessionStorage.setItem('my_character', JSON.stringify(character));
+  // 角色创建成功，导航到跑团房间
+  SocketClient.emit('navigating_to_room');
+  setTimeout(() => { window.location.href = '/trpg.html'; }, 100);
+});
+
+socket.on('error_msg', ({ message }) => {
+  Toast.show(message, 'error');
+});
+
+// ── 渲染种族 ─────────────────────────────────────────────
+function renderRaceGrid() {
+  if (!gameData) return;
+  const grid = document.getElementById('raceGrid');
+  grid.innerHTML = '';
+  const icons = { human:'👤', elf:'🧝', dwarf:'⛏️', halfling:'🌿', halforc:'💚', tiefling:'😈', dragonborn:'🐉', gnome:'🔬' };
+  Object.entries(gameData.races).forEach(([key, race]) => {
+    const bonusText = Object.entries(race.bonus).map(([s,v]) => `${STAT_NAMES[s]}+${v}`).join(' ');
+    const card = document.createElement('div');
+    card.className = 'option-card';
+    card.dataset.key = key;
+    card.innerHTML = `<div class="icon">${icons[key]||'🧙'}</div><h3>${race.name}</h3><p style="font-size:.75rem;color:#aaa;margin-top:3px">${race.trait.substring(0,60)}...</p><div class="bonus">${bonusText}</div><span class="check">✓</span>`;
+    card.addEventListener('click', () => selectRace(key));
+    grid.appendChild(card);
+  });
+}
+
+function selectRace(key) {
+  selectedRace = key;
+  document.querySelectorAll('#raceGrid .option-card').forEach(c => c.classList.toggle('selected', c.dataset.key === key));
+  updateStatsGrid();
+}
+
+// ── 渲染职业 ─────────────────────────────────────────────
+function renderClassGrid() {
+  if (!gameData) return;
+  const grid = document.getElementById('classGrid');
+  grid.innerHTML = '';
+  const icons = { fighter:'⚔️', wizard:'📚', rogue:'🗡️', cleric:'✝️', ranger:'🏹', barbarian:'🪓', bard:'🎵', paladin:'🛡️', druid:'🍃', monk:'🥋' };
+  Object.entries(gameData.classes).forEach(([key, cls]) => {
+    const card = document.createElement('div');
+    card.className = 'option-card';
+    card.dataset.key = key;
+    card.innerHTML = `<div class="icon">${icons[key]||'⚔️'}</div><h3>${cls.name}</h3><p style="font-size:.72rem;color:#6699aa">生命骰：d${cls.hpDie} | ${cls.armorProf}</p><p style="font-size:.73rem;margin-top:4px;color:#aaa">${cls.feature.substring(0,55)}...</p><span class="check">✓</span>`;
+    card.addEventListener('click', () => selectClass(key));
+    grid.appendChild(card);
+  });
+}
+
+function selectClass(key) {
+  selectedClass = key;
+  document.querySelectorAll('#classGrid .option-card').forEach(c => c.classList.toggle('selected', c.dataset.key === key));
+  selectedSkills = [];
+  renderSkillsGrid();
+}
+
+// ── 属性点分配 ───────────────────────────────────────────
+function renderStatsGrid() {
+  const grid = document.getElementById('statsGrid');
+  grid.innerHTML = '';
+  STAT_KEYS.forEach(key => {
+    const row = document.createElement('div');
+    row.className = 'stat-row';
+    row.id = 'stat_' + key;
+    grid.appendChild(row);
+  });
+  updateStatsGrid();
+}
+
+function updateStatsGrid() {
+  const cost = gameData ? gameData.pointBuyCost : {8:0,9:1,10:2,11:3,12:4,13:5,14:7,15:9};
+  const budget = 27;
+  const spent = STAT_KEYS.reduce((s,k) => s + (cost[baseStats[k]] || 0), 0);
+  const left = budget - spent;
+  document.getElementById('pointsLeft').textContent = left;
+  document.getElementById('totalPoints').textContent = budget;
+
+  const raceBonus = (selectedRace && gameData) ? (gameData.races[selectedRace]?.bonus || {}) : {};
+
+  STAT_KEYS.forEach(key => {
+    const base = baseStats[key];
+    const bonus = raceBonus[key] || 0;
+    const total = base + bonus;
+    const mod = Math.floor((total - 10) / 2);
+    const canPlus  = base < 15 && (left - ((cost[base+1]||9) - (cost[base]||0))) >= 0;
+    const canMinus = base > 8;
+    const row = document.getElementById('stat_' + key);
+    row.innerHTML = `
+      <label>${STAT_NAMES[key]}</label>
+      <div class="stat-val">${total}</div>
+      <div class="stat-mod">${mod >= 0 ? '+' + mod : mod}</div>
+      ${bonus ? `<div class="stat-bonus">基础${base} +${bonus}种族</div>` : `<div class="stat-bonus">基础值</div>`}
+      <div class="stat-buttons">
+        <button class="stat-btn minus" ${canMinus?'':'disabled'} onclick="changeStat('${key}',-1)">－</button>
+        <button class="stat-btn plus" ${canPlus?'':'disabled'} onclick="changeStat('${key}',+1)">＋</button>
+      </div>`;
+  });
+}
+
+function changeStat(key, delta) {
+  const cost = gameData ? gameData.pointBuyCost : {8:0,9:1,10:2,11:3,12:4,13:5,14:7,15:9};
+  const budget = 27;
+  const spent = STAT_KEYS.reduce((s,k) => s + (cost[baseStats[k]] || 0), 0);
+  const newVal = baseStats[key] + delta;
+  if (newVal < 8 || newVal > 15) return;
+  const newSpent = spent - (cost[baseStats[key]]||0) + (cost[newVal]||0);
+  if (newSpent > budget) return;
+  baseStats[key] = newVal;
+  updateStatsGrid();
+}
+
+// ── 技能 ─────────────────────────────────────────────────
+const ALL_SKILLS = ['运动','杂技','隐匿','巧手','奥术','历史','调查','自然','宗教','驯兽','洞悉','医疗','感知','求生','生存','欺骗','威吓','表演','说服'];
+
+function renderSkillsGrid() {
+  const grid = document.getElementById('skillsGrid');
+  grid.innerHTML = '';
+  const maxSkills = (gameData && selectedClass) ? (gameData.classSkillCount[selectedClass] || 2) : 2;
+  document.getElementById('skillCount').textContent = maxSkills;
+
+  const skillMap = gameData ? gameData.skillMap : {};
+  ALL_SKILLS.forEach(skill => {
+    const stat = skillMap[skill] || '—';
+    const chip = document.createElement('div');
+    chip.className = 'skill-chip' + (selectedSkills.includes(skill) ? ' selected' : '');
+    chip.innerHTML = `${skill}<span class="stat-tag">(${stat})</span>`;
+    chip.addEventListener('click', () => toggleSkill(skill, maxSkills));
+    grid.appendChild(chip);
+  });
+}
+
+function toggleSkill(skill, max) {
+  if (selectedSkills.includes(skill)) {
+    selectedSkills = selectedSkills.filter(s => s !== skill);
+  } else {
+    if (selectedSkills.length >= max) {
+      Toast.show(`最多选 ${max} 个技能`, 'error');
+      return;
+    }
+    selectedSkills.push(skill);
+  }
+  renderSkillsGrid();
+}
+
+// ── 步骤导航 ─────────────────────────────────────────────
+function goToStep(n) {
+  document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('active', i === n));
+  document.querySelectorAll('.step').forEach((s,i) => {
+    s.classList.toggle('active', i === n);
+    if (i < n) s.classList.add('done');
+    else s.classList.remove('done');
+  });
+  currentStep = n;
+}
+
+function nextStep(from) {
+  if (from === 0 && !selectedRace) { Toast.show('请选择种族', 'error'); return; }
+  if (from === 1 && !selectedClass) { Toast.show('请选择职业', 'error'); return; }
+  if (from === 4) {
+    const name = document.getElementById('charName').value.trim();
+    if (!name) { Toast.show('请输入角色名称', 'error'); return; }
+  }
+  if (from === 4) buildPreview();
+  goToStep(from + 1);
+}
+
+function prevStep(from) {
+  goToStep(from - 1);
+}
+
+// ── 角色预览 ─────────────────────────────────────────────
+function buildPreview() {
+  const raceData  = gameData.races[selectedRace];
+  const classData = gameData.classes[selectedClass];
+  const raceBonus = raceData.bonus || {};
+  const finalStats = {};
+  STAT_KEYS.forEach(k => finalStats[k] = baseStats[k] + (raceBonus[k] || 0));
+  const conMod = Math.floor((finalStats.CON - 10) / 2);
+  const maxHP  = classData.hpDie + conMod;
+  const dexMod = Math.floor((finalStats.DEX - 10) / 2);
+  let ac = 10 + dexMod;
+  if (['fighter','paladin','cleric','ranger'].includes(selectedClass)) ac = Math.max(ac, 13 + Math.min(dexMod,2));
+
+  const name     = document.getElementById('charName').value.trim() || '无名冒险者';
+  const bg       = document.getElementById('background').value;
+  const alignment = document.getElementById('alignment').value;
+  const appearance = document.getElementById('appearance').value;
+  const backstory = document.getElementById('backstory').value;
+  const bgData   = gameData.backgrounds[bg];
+
+  let html = `<h2>${name}</h2>
+  <div class="subtitle">${raceData.name} · ${classData.name} · 1级 | ${bgData?bgData.name:bg} · ${alignment}</div>
+  <div class="stat-summary">`;
+  STAT_KEYS.forEach(k => {
+    const v = finalStats[k], m = Math.floor((v-10)/2);
+    html += `<div class="stat-box"><div class="n">${STAT_NAMES[k]}</div><div class="v">${v}</div><div class="m">${m>=0?'+'+m:m}</div></div>`;
+  });
+  html += `</div>
+  <div class="info-row">
+    <div><span>HP </span><strong>${Math.max(1,maxHP)}</strong></div>
+    <div><span>AC </span><strong>${ac}</strong></div>
+    <div><span>生命骰 </span><strong>d${classData.hpDie}</strong></div>
+    <div><span>熟练技能 </span><strong>${selectedSkills.join('、')||'无'}</strong></div>
+  </div>`;
+  if (appearance) html += `<p style="margin-top:8px;font-size:.83rem;color:#aaa">外貌：${appearance}</p>`;
+  if (backstory)  html += `<p style="margin-top:6px;font-size:.83rem;color:#aaa">背景：${backstory.substring(0,120)}${backstory.length>120?'…':''}</p>`;
+  html += `<div style="margin-top:10px;font-size:.78rem;color:#5577aa">🌟 种族天赋：${raceData.trait}</div>`;
+  html += `<div style="font-size:.78rem;color:#5577aa">⚔️ 职业特性：${classData.feature}</div>`;
+  if (bgData) html += `<div style="font-size:.78rem;color:#5577aa">📜 背景特性：${bgData.feature}</div>`;
+
+  document.getElementById('charPreview').innerHTML = html;
+}
+
+// ── 确认提交 ─────────────────────────────────────────────
+function confirmCharacter() {
+  const name = document.getElementById('charName').value.trim();
+  if (!name || !selectedRace || !selectedClass) { Toast.show('信息不完整', 'error'); return; }
+
+  document.getElementById('confirmBtn').disabled = true;
+  document.getElementById('confirmBtn').textContent = '提交中...';
+
+  SocketClient.emit('trpg_set_character', {
+    name,
+    race:       selectedRace,
+    classKey:   selectedClass,
+    background: document.getElementById('background').value,
+    alignment:  document.getElementById('alignment').value,
+    appearance: document.getElementById('appearance').value,
+    backstory:  document.getElementById('backstory').value,
+    stats:      { ...baseStats },
+    skills:     [...selectedSkills]
+  });
+}
+
+// 字数统计
+document.getElementById('backstory')?.addEventListener('input', function() {
+  document.getElementById('backstoryCount').textContent = this.value.length;
+});
+
+// 步骤点击导航
+document.querySelectorAll('.step').forEach(s => {
+  s.addEventListener('click', () => {
+    const n = parseInt(s.dataset.step);
+    if (n < currentStep || s.classList.contains('done')) goToStep(n);
+  });
+});
+</script>
+</body>
+</html>

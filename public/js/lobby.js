@@ -33,6 +33,19 @@ document.addEventListener('DOMContentLoaded', () => {
   myAvatar.textContent   = Session.avatar;
   myNickname.textContent = Session.nickname;
 
+  // 是否要创建跑团房间（区分跳转目标）
+  let wantTrpg = false;
+
+  // 创建跑团按钮
+  const createTrpgBtn = document.getElementById('createTrpgBtn');
+  if (createTrpgBtn) {
+    createTrpgBtn.addEventListener('click', () => {
+      wantTrpg = true;
+      const roomName = `${Session.nickname}的跑团`;
+      SocketClient.emit('create_room', { roomName, theme: 'DND跑团', maxPlayers: 4 });
+    });
+  }
+
   // ── 连接服务器 ───────────────────────────────────
   const socket = SocketClient.connect();
 
@@ -59,11 +72,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 成功加入房间 → 跳转
   socket.on('room_joined', ({ room }) => {
     Session.saveRoom(room.roomId);
-    // 告知服务器：我正在跳转到房间页，socket断开时不要删除房间
     SocketClient.emit('navigating_to_room');
-    // 短暂延迟确保事件发送完毕后再跳转
     setTimeout(() => {
-      window.location.href = '/room.html';
+      // 跑团房间进角色创建页，普通房间进密室页
+      window.location.href = wantTrpg ? '/character-create.html' : '/room.html';
     }, 150);
   });
 
