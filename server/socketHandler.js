@@ -298,30 +298,50 @@ function registerSocketEvents(io) {
       const campaign = trpgEngine.createCampaign(data.scenarioId || 'dungeon_classic', player.roomId, player.nickname);
       campaigns.set(player.roomId, campaign);
       room.roomType = 'trpg';
+
+      // 自动把已有 pendingCharacter 的成员写入战役
+      (room.players || []).forEach(rp => {
+        const rPlayer = roomManager.getPlayer(rp.socketId);
+        if (rPlayer && rPlayer.pendingCharacter) {
+          campaign.players.push({
+            socketId: rp.socketId,
+            nickname: rPlayer.nickname,
+            avatar: rPlayer.avatar,
+            character: rPlayer.pendingCharacter
+          });
+          console.log(`[TRPG] 自动载入 ${rPlayer.nickname} 的角色 ${rPlayer.pendingCharacter.name}`);
+        }
+      });
+
       io.to(player.roomId).emit('trpg_campaign_created', { campaign: sanitizeCampaign(campaign) });
-      console.log(`[TRPG] ${player.nickname} 创建战役「${campaign.title}」`);
+      console.log(`[TRPG] ${player.nickname} 创建战役「${campaign.title}」，已载入 ${campaign.players.length} 个角色`);
     });
 
-    // 提交角色创建
+    // 提交角色创建（允许在战役创建前提交，会暂存到 player.pendingCharacter）
     socket.on('trpg_set_character', (data) => {
       const player = roomManager.getPlayer(socket.id);
       if (!player || !player.roomId) return;
-      const campaign = campaigns.get(player.roomId);
-      if (!campaign) { socket.emit('error_msg', { message: '战役未创建' }); return; }
 
       try {
         const character = trpgEngine.createCharacter(data);
-        // 更新或添加玩家
-        const idx = campaign.players.findIndex(p => p.socketId === socket.id);
-        if (idx !== -1) {
-          campaign.players[idx].character = character;
-          campaign.players[idx].nickname  = player.nickname;
-        } else {
-          campaign.players.push({ socketId: socket.id, nickname: player.nickname, avatar: player.avatar, character });
+        // 无论战役是否存在，先把角色暂存到玩家对象
+        player.pendingCharacter = character;
+
+        const campaign = campaigns.get(player.roomId);
+        if (campaign) {
+          // 战役已存在，直接写入
+          const idx = campaign.players.findIndex(p => p.socketId === socket.id);
+          if (idx !== -1) {
+            campaign.players[idx].character = character;
+            campaign.players[idx].nickname  = player.nickname;
+          } else {
+            campaign.players.push({ socketId: socket.id, nickname: player.nickname, avatar: player.avatar, character });
+          }
+          io.to(player.roomId).emit('trpg_campaign_updated', { campaign: sanitizeCampaign(campaign) });
         }
-        io.to(player.roomId).emit('trpg_campaign_updated', { campaign: sanitizeCampaign(campaign) });
+        // 无论如何都回复成功，让角色创建页可以正常跳转
         socket.emit('trpg_character_set', { character });
-        console.log(`[TRPG] ${player.nickname} 创建角色：${character.name}`);
+        console.log(`[TRPG] ${player.nickname} 创建角色：${character.name}（战役${campaign ? '已存在' : '待创建'}）`);
       } catch (e) {
         socket.emit('error_msg', { message: e.message });
       }
