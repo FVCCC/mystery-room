@@ -6,3 +6,5 @@ npm-debug.log*
 Thumbs.db
 saves/*.json  
 !saves/.gitkeep 
+do-push2.js  
+check-net.js  
