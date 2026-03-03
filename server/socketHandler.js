@@ -249,6 +249,32 @@ function registerSocketEvents(io) {
     });
 
     // ─── 再来一局 ─────────────────────────────────────────────
+    socket.on('rename_room', (data) => {
+      const player = roomManager.getPlayer(socket.id);
+      if (!player || !player.roomId) {
+        socket.emit('error_msg', { message: '你不在任何房间中' });
+        return;
+      }
+
+      const result = roomManager.renameRoom(player.roomId, socket.id, data.newName);
+      if (!result.success) {
+        socket.emit('error_msg', { message: result.error });
+        return;
+      }
+
+      io.to(player.roomId).emit('room_renamed', {
+        roomName: result.room.roomName
+      });
+
+      io.to(player.roomId).emit('room_state_update', {
+        room: getRoomPublicData(result.room)
+      });
+
+      io.to('lobby').emit('room_list_update', { rooms: roomManager.getRoomList() });
+
+      console.log(`[房间] ${player.nickname} 将房间 ${player.roomId} 改名为「${result.room.roomName}」`);
+    });
+
     socket.on('play_again', () => {
       const player = roomManager.getPlayer(socket.id);
       if (!player || !player.roomId) return;

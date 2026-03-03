@@ -79,17 +79,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── 连接服务器 ───────────────────────────────────
   const socket = SocketClient.connect();
 
+  // 用 join_lobby 成功的确认事件（room_list_update）来触发 join_room
+  // 避免 setTimeout 在云端延迟下不可靠
+  let hasJoinedRoom = false;
+
   socket.on('connect', () => {
     mySocketId = socket.id;
-    // 重新进入大厅频道，然后加入房间
+    hasJoinedRoom = false;
     SocketClient.emit('join_lobby', {
       nickname: Session.nickname,
       avatar: Session.avatar
     });
-    // 等大厅注册完毕后加入房间
-    setTimeout(() => {
+  });
+
+  // 服务器处理完 join_lobby 后会推送 room_list_update，
+  // 此时再发送 join_room，确保玩家信息已注册
+  socket.on('room_list_update', () => {
+    if (!hasJoinedRoom) {
+      hasJoinedRoom = true;
       SocketClient.emit('join_room', { roomId: Session.roomId });
-    }, 300);
+    }
   });
 
   // ── Socket 事件 ──────────────────────────────────
@@ -239,6 +248,53 @@ document.addEventListener('DOMContentLoaded', () => {
     Toast.show('🔄 准备好迎接新的挑战！', 'success');
   });
 
+  // ── 房间改名事件 ─────────────────────────────────
+  socket.on('room_renamed', ({ roomName }) => {
+    roomNameDisplay.textContent = roomName;
+    Toast.show(`✏️ 房间名已改为「${roomName}」`, 'success');
+  });
+
+  // ── 改名逻辑（房主点击房间名进入编辑模式） ──────
+  roomNameDisplay.addEventListener('click', () => {
+    if (!isOwner || !roomData || roomData.status !== 'waiting') return;
+
+    const oldName = roomNameDisplay.textContent;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = oldName;
+    input.maxLength = 20;
+    input.style.cssText = `
+      font-size: inherit;
+      font-weight: inherit;
+      color: inherit;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 4px;
+      padding: 2px 8px;
+      outline: none;
+      width: 200px;
+    `;
+
+    roomNameDisplay.replaceWith(input);
+    input.focus();
+    input.select();
+
+    function commitRename() {
+      const newName = input.value.trim() || oldName;
+      input.replaceWith(roomNameDisplay);
+      roomNameDisplay.textContent = newName;
+      if (newName !== oldName) {
+        SocketClient.emit('rename_room', { newName });
+      }
+    }
+
+    input.addEventListener('blur', commitRename);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+      if (e.key === 'Escape') { input.value = oldName; commitRename(); }
+    });
+  });
+
   // ── 更新房间数据 ─────────────────────────────────
   function updateRoomData(room) {
     roomData = room;
@@ -247,6 +303,17 @@ document.addEventListener('DOMContentLoaded', () => {
     roomIdDisplay.textContent   = room.roomId;
 
     isOwner = (room.ownerId === mySocketId || room.ownerId === socket.id);
+
+    // 房主等待状态时，房间名显示编辑提示
+    if (isOwner && room.status === 'waiting') {
+      roomNameDisplay.title = '点击可修改房间名';
+      roomNameDisplay.style.cursor = 'pointer';
+      roomNameDisplay.style.textDecoration = 'underline dotted';
+    } else {
+      roomNameDisplay.title = '';
+      roomNameDisplay.style.cursor = 'default';
+      roomNameDisplay.style.textDecoration = 'none';
+    }
 
     // 玩家列表
     renderPlayerList(room.players, room.ownerId);

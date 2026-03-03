@@ -163,6 +163,26 @@ function updateRoomGameState(roomId, gameState) {
 }
 
 /**
+ * 修改房间名称（仅房主可操作）
+ * @param {string} roomId
+ * @param {string} socketId - 操作者 socketId
+ * @param {string} newName - 新房间名
+ * @returns {{ success: boolean, room?: object, error?: string }}
+ */
+function renameRoom(roomId, socketId, newName) {
+  const room = rooms.get(roomId);
+  if (!room) return { success: false, error: '房间不存在' };
+  if (room.ownerId !== socketId) return { success: false, error: '只有房主才能修改房间名' };
+  if (room.status !== 'waiting') return { success: false, error: '游戏进行中无法修改房间名' };
+
+  const trimmed = (newName || '').trim().substring(0, 20);
+  if (!trimmed) return { success: false, error: '房间名不能为空' };
+
+  room.roomName = trimmed;
+  return { success: true, room };
+}
+
+/**
  * 重置房间到等待状态
  */
 function resetRoom(roomId) {
@@ -186,5 +206,6 @@ module.exports = {
   getRoomList,
   getRoom,
   updateRoomGameState,
+  renameRoom,
   resetRoom
 };
