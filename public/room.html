@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>游戏房间 — 幻境密室</title>
+  <link rel="stylesheet" href="/css/global.css">
+  <link rel="stylesheet" href="/css/room.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="btn btn-ghost btn-sm" id="leaveBtn">← 离开</button>
+      <span class="topbar-info">
+        <span id="roomNameDisplay">加载中...</span>
+        <span class="topbar-theme" id="roomThemeDisplay"></span>
+      </span>
+    </div>
+    <div class="topbar-right">
+      <div class="player-badge">
+        <span id="myAvatar">🧙</span>
+        <span id="myNickname">冒险者</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主体三栏 -->
+  <main class="room-main">
+
+    <!-- ── 左栏：玩家列表 ── -->
+    <aside class="players-panel">
+      <div class="panel-header">👥 冒险者</div>
+      <div class="players-list" id="playersList"></div>
+
+      <!-- 开始游戏按钮（仅房主可见） -->
+      <div class="start-area" id="startArea">
+        <div class="start-hint" id="startHint">等待玩家加入...</div>
+        <button class="btn btn-success btn-lg start-btn" id="startBtn" disabled>
+          ⚔️ 开始游戏
+        </button>
+      </div>
+    </aside>
+
+    <!-- ── 中栏：游戏主区 ── -->
+    <section class="game-panel">
+
+      <!-- 等待状态 -->
+      <div class="game-state" id="stateWaiting">
+        <div class="waiting-icon">🏰</div>
+        <h2 class="waiting-title">等待开始...</h2>
+        <p class="waiting-sub">等待房主开始游戏，或邀请朋友进入房间</p>
+        <div class="room-id-display">
+          房间ID: <strong id="roomIdDisplay">--</strong>
+          <button class="btn btn-ghost btn-sm" id="copyRoomIdBtn">复制</button>
+        </div>
+      </div>
+
+      <!-- 游戏进行中 -->
+      <div class="game-state hidden" id="statePlaying">
+        <!-- 谜题进度 -->
+        <div class="puzzle-progress">
+          <span class="progress-label">第 <span id="puzzleNum">1</span> 关 / 共 <span id="puzzleTotal">5</span> 关</span>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="progressBar"></div>
+          </div>
+        </div>
+
+        <!-- 倒计时 -->
+        <div class="timer-area">
+          <div class="timer-circle" id="timerCircle">
+            <span class="timer-num" id="timerNum">90</span>
+            <span class="timer-label">秒</span>
+          </div>
+          <div class="timer-bar-wrap">
+            <div class="timer-bar" id="timerBar"></div>
+          </div>
+        </div>
+
+        <!-- 场景描述 -->
+        <div class="scene-desc" id="sceneDesc"></div>
+
+        <!-- 谜题题目 -->
+        <div class="puzzle-box">
+          <div class="puzzle-question" id="puzzleQuestion">加载谜题中...</div>
+        </div>
+
+        <!-- 提示区 -->
+        <div class="hint-area">
+          <button class="btn btn-ghost btn-sm" id="hintBtn">💡 获取提示（-20分）</button>
+          <div class="hint-text hidden" id="hintText"></div>
+        </div>
+
+        <!-- 提交答案 -->
+        <div class="answer-area">
+          <input type="text" class="input answer-input" id="answerInput" placeholder="输入你的答案..." maxlength="50" autocomplete="off">
+          <button class="btn btn-primary" id="submitAnswerBtn">🔍 提交答案</button>
+        </div>
+
+        <!-- 本局得分榜 -->
+        <div class="score-board">
+          <div class="score-title">📊 本局得分</div>
+          <div class="score-list" id="scoreList"></div>
+        </div>
+      </div>
+
+      <!-- 游戏结束 -->
+      <div class="game-state hidden" id="stateFinished">
+        <div class="result-header">
+          <div class="result-trophy">🏆</div>
+          <h2 class="result-title">本局结束！</h2>
+          <p class="result-sub" id="resultTheme"></p>
+        </div>
+
+        <div class="rankings-list" id="rankingsList"></div>
+
+        <div class="result-actions">
+          <button class="btn btn-primary btn-lg" id="playAgainBtn">🔄 再来一局</button>
+          <button class="btn btn-ghost btn-lg" id="backLobbyBtn">返回大厅</button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ── 右栏：聊天 ── -->
+    <aside class="chat-panel">
+      <div class="panel-header">💬 讨论频道</div>
+
+      <div class="chat-messages" id="chatMessages"></div>
+
+      <div class="chat-input-area">
+        <div class="emoji-bar">
+          <button class="emoji-btn" data-emoji="😄">😄</button>
+          <button class="emoji-btn" data-emoji="🤔">🤔</button>
+          <button class="emoji-btn" data-emoji="💡">💡</button>
+          <button class="emoji-btn" data-emoji="🎉">🎉</button>
+          <button class="emoji-btn" data-emoji="😱">😱</button>
+          <button class="emoji-btn" data-emoji="👍">👍</button>
+        </div>
+        <div class="input-row">
+          <input type="text" class="input chat-input" id="chatInput" placeholder="讨论解谜思路..." maxlength="200" autocomplete="off">
+          <button class="btn btn-secondary btn-sm" id="sendBtn">发</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- 答对特效遮罩 -->
+  <div class="correct-overlay hidden" id="correctOverlay">
+    <div class="correct-content">
+      <div class="correct-icon">🎯</div>
+      <div class="correct-text" id="correctText">答对了！</div>
+      <div class="correct-score" id="correctScore">+80 分</div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/socket-client.js"></script>
+  <script src="/js/room.js"></script>
+</body>
+</html>

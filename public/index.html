@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>幻境密室 — 多人在线解谜游戏</title>
+  <link rel="stylesheet" href="/css/global.css">
+  <link rel="stylesheet" href="/css/index.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+
+  <div class="page-wrapper">
+    <!-- Logo区域 -->
+    <div class="logo-area">
+      <div class="logo-icon">🏰</div>
+      <h1 class="logo-title">幻 境 密 室</h1>
+      <p class="logo-sub">Mystery Room · 多人在线协作解谜</p>
+    </div>
+
+    <!-- 进入卡片 -->
+    <div class="enter-card card">
+      <h2 class="enter-title">选择你的身份</h2>
+
+      <!-- 昵称输入 -->
+      <div class="form-group">
+        <label for="nicknameInput">冒险者昵称</label>
+        <input
+          type="text"
+          id="nicknameInput"
+          class="input"
+          placeholder="输入你的昵称（2-10个字符）"
+          maxlength="10"
+          autocomplete="off"
+        >
+        <span class="input-hint" id="nicknameHint"></span>
+      </div>
+
+      <!-- 头像选择 -->
+      <div class="form-group">
+        <label>选择头像</label>
+        <div class="avatar-grid" id="avatarGrid">
+          <div class="avatar-item active" data-avatar="🧙">🧙</div>
+          <div class="avatar-item" data-avatar="🧝">🧝</div>
+          <div class="avatar-item" data-avatar="🧛">🧛</div>
+          <div class="avatar-item" data-avatar="🧜">🧜</div>
+          <div class="avatar-item" data-avatar="🦸">🦸</div>
+          <div class="avatar-item" data-avatar="🕵️">🕵️</div>
+          <div class="avatar-item" data-avatar="👩‍🚀">👩‍🚀</div>
+          <div class="avatar-item" data-avatar="🥷">🥷</div>
+        </div>
+      </div>
+
+      <!-- 进入按钮 -->
+      <button class="btn btn-primary btn-lg enter-btn" id="enterBtn">
+        ⚔️ 进入游戏大厅
+      </button>
+    </div>
+
+    <!-- 游戏说明 -->
+    <div class="intro-area">
+      <div class="intro-item">
+        <span class="intro-icon">🏰</span>
+        <span>选择主题密室</span>
+      </div>
+      <div class="intro-divider">→</div>
+      <div class="intro-item">
+        <span class="intro-icon">👥</span>
+        <span>2~6人协作</span>
+      </div>
+      <div class="intro-divider">→</div>
+      <div class="intro-item">
+        <span class="intro-icon">💬</span>
+        <span>聊天解谜闯关</span>
+      </div>
+      <div class="intro-divider">→</div>
+      <div class="intro-item">
+        <span class="intro-icon">🏆</span>
+        <span>积分排行</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/socket-client.js"></script>
+  <script src="/js/index.js"></script>
+</body>
+</html>

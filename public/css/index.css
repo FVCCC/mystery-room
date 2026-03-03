@@ -1,0 +1,157 @@
+/* ===== 首页样式 ===== */
+
+.page-wrapper {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 20px;
+  gap: 30px;
+}
+
+/* ── Logo ── */
+.logo-area {
+  text-align: center;
+  animation: slideUp 0.8s ease;
+}
+
+.logo-icon {
+  font-size: 64px;
+  display: block;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 0 20px rgba(0,212,255,0.5));
+  animation: float 4s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-10px); }
+}
+
+.logo-title {
+  font-size: 2.8rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  background: linear-gradient(135deg, #00d4ff, #e94560, #00d4ff);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 4s linear infinite;
+  text-shadow: none;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
+.logo-sub {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 8px;
+  letter-spacing: 0.05em;
+}
+
+/* ── 进入卡片 ── */
+.enter-card {
+  width: 100%;
+  max-width: 420px;
+  animation: slideUp 0.8s ease 0.15s both;
+  border-color: rgba(0,212,255,0.2);
+}
+
+.enter-title {
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  margin-bottom: 22px;
+  font-weight: 500;
+}
+
+.input-hint {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--accent-primary);
+  margin-top: 4px;
+  min-height: 18px;
+}
+
+/* ── 头像网格 ── */
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+}
+
+.avatar-item {
+  aspect-ratio: 1;
+  font-size: 1.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition);
+  background: var(--bg-input);
+}
+
+.avatar-item:hover {
+  border-color: var(--neon-blue);
+  background: rgba(0,212,255,0.05);
+  transform: scale(1.05);
+}
+
+.avatar-item.active {
+  border-color: var(--neon-blue);
+  background: rgba(0,212,255,0.1);
+  box-shadow: 0 0 10px rgba(0,212,255,0.3);
+}
+
+/* ── 进入按钮 ── */
+.enter-btn {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 1.05rem;
+  padding: 14px;
+}
+
+/* ── 游戏介绍 ── */
+.intro-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: slideUp 0.8s ease 0.3s both;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.intro-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.intro-icon {
+  font-size: 1.6rem;
+  filter: drop-shadow(0 0 6px rgba(0,212,255,0.3));
+}
+
+.intro-divider {
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 480px) {
+  .logo-title { font-size: 2rem; }
+  .avatar-grid { grid-template-columns: repeat(4, 1fr); }
+  .intro-area { display: none; }
+}

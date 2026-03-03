@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>游戏大厅 — 幻境密室</title>
+  <link rel="stylesheet" href="/css/global.css">
+  <link rel="stylesheet" href="/css/lobby.css">
+</head>
+<body>
+  <div class="stars-bg"></div>
+
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="topbar-logo">🏰 幻境密室</span>
+    </div>
+    <div class="topbar-right">
+      <div class="player-badge">
+        <span class="player-avatar" id="myAvatar">🧙</span>
+        <span class="player-name" id="myNickname">冒险者</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="logoutBtn">退出</button>
+    </div>
+  </header>
+
+  <!-- 主体 -->
+  <main class="lobby-main">
+    <!-- 左侧：房间列表 -->
+    <section class="rooms-section">
+      <div class="section-header">
+        <h2 class="section-title">🚪 冒险房间</h2>
+        <button class="btn btn-primary btn-sm" id="createRoomBtn">+ 创建房间</button>
+      </div>
+
+      <div class="rooms-list" id="roomsList">
+        <div class="rooms-empty" id="roomsEmpty">
+          <span class="rooms-empty-icon">🌌</span>
+          <p>暂无房间，快来创建第一个！</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右侧：大厅聊天 -->
+    <section class="chat-section">
+      <div class="section-header">
+        <h2 class="section-title">💬 大厅频道</h2>
+        <span class="online-count" id="onlineHint">聊聊天，等室友~</span>
+      </div>
+
+      <div class="chat-messages" id="chatMessages"></div>
+
+      <div class="chat-input-area">
+        <div class="emoji-bar">
+          <button class="emoji-btn" data-emoji="😄">😄</button>
+          <button class="emoji-btn" data-emoji="👍">👍</button>
+          <button class="emoji-btn" data-emoji="🎉">🎉</button>
+          <button class="emoji-btn" data-emoji="🤔">🤔</button>
+          <button class="emoji-btn" data-emoji="😱">😱</button>
+          <button class="emoji-btn" data-emoji="🔥">🔥</button>
+        </div>
+        <div class="input-row">
+          <input type="text" class="input chat-input" id="chatInput" placeholder="在大厅聊天..." maxlength="200" autocomplete="off">
+          <button class="btn btn-secondary" id="sendBtn">发送</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 创建房间弹窗 -->
+  <div class="overlay hidden" id="createRoomOverlay">
+    <div class="modal">
+      <h3 class="modal-title">🏰 创建新房间</h3>
+
+      <div class="form-group">
+        <label for="roomNameInput">房间名称</label>
+        <input type="text" id="roomNameInput" class="input" placeholder="给房间起个名字..." maxlength="20">
+      </div>
+
+      <div class="form-group">
+        <label for="themeSelect">密室主题</label>
+        <select id="themeSelect" class="input">
+          <option value="古堡谜案">🏰 古堡谜案</option>
+          <option value="太空迷航">🚀 太空迷航</option>
+          <option value="海底秘密">🌊 海底秘密</option>
+          <option value="随机">🎲 随机主题</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="maxPlayersSelect">最大玩家数</label>
+        <select id="maxPlayersSelect" class="input">
+          <option value="2">2 人</option>
+          <option value="3">3 人</option>
+          <option value="4" selected>4 人</option>
+          <option value="5">5 人</option>
+          <option value="6">6 人</option>
+        </select>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="cancelCreateBtn">取消</button>
+        <button class="btn btn-primary" id="confirmCreateBtn">🚀 创建并加入</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/socket-client.js"></script>
+  <script src="/js/lobby.js"></script>
+</body>
+</html>
