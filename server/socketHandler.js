@@ -6,18 +6,8 @@
 const roomManager = require('./roomManager');
 const gameEngine = require('./gameEngine');
 
-/**
- * 注册 Socket 事件
- * @param {SocketIO.Server} io
- */
 function registerSocketEvents(io) {
 
-  /**
-   * 全局 emit 工具函数（供游戏引擎回调使用）
-   * @param {string} event 事件名
-   * @param {object} data 数据
-   * @param {string} roomId 目标房间
-   */
   function emitToRoom(event, data, roomId) {
     io.to(roomId).emit(event, data);
   }
@@ -41,16 +31,24 @@ function registerSocketEvents(io) {
       socket.join('lobby');
       console.log(`[大厅] ${nickname} (${socket.id}) 进入大厅`);
 
-      // 推送房间列表给新玩家
+      // 推送房间列表给新玩家（room.js 依赖此事件触发 join_room）
       socket.emit('room_list_update', { rooms: roomManager.getRoomList() });
 
-      // 广播大厅人数变化
       const player = roomManager.getPlayer(socket.id);
       io.to('lobby').emit('lobby_chat', {
         type: 'system',
         message: `🌟 ${player.nickname} 进入了大厅`,
         time: Date.now()
       });
+    });
+
+    // ─── 标记：即将跳转到房间页（不要在断开时删除房间）────
+    socket.on('navigating_to_room', () => {
+      const player = roomManager.getPlayer(socket.id);
+      if (player) {
+        player.navigatingToRoom = true;
+        console.log(`[导航] ${player.nickname} 正在跳转到房间页，保留房间`);
+      }
     });
 
     // ─── 大厅聊天 ────────────────────────────────────────────
@@ -85,7 +83,6 @@ function registerSocketEvents(io) {
         maxPlayers: data.maxPlayers || 4
       });
 
-      // 创建后直接加入
       const joinResult = roomManager.joinRoom(socket.id, room.roomId);
       if (!joinResult.success) {
         socket.emit('error_msg', { message: joinResult.error });
@@ -100,9 +97,7 @@ function registerSocketEvents(io) {
         mySocketId: socket.id
       });
 
-      // 更新大厅房间列表
       io.to('lobby').emit('room_list_update', { rooms: roomManager.getRoomList() });
-
       console.log(`[房间] ${player.nickname} 创建并加入房间 ${room.roomId}`);
     });
 
@@ -125,38 +120,35 @@ function registerSocketEvents(io) {
       socket.leave('lobby');
       socket.join(roomId);
 
-      // 告知加入者房间完整信息
       socket.emit('room_joined', {
         room: getRoomPublicData(result.room),
         mySocketId: socket.id
       });
 
-      // 告知房间内其他人有新玩家
-      socket.to(roomId).emit('player_joined', {
-        socketId: socket.id,
-        nickname: player.nickname,
-        avatar: player.avatar
-      });
+      if (!result.reconnected) {
+        // 新玩家加入，通知房间内其他人
+        socket.to(roomId).emit('player_joined', {
+          socketId: socket.id,
+          nickname: player.nickname,
+          avatar: player.avatar
+        });
 
-      // 系统消息
-      io.to(roomId).emit('room_chat', {
-        type: 'system',
-        message: `🎉 ${player.nickname} 加入了房间`,
-        time: Date.now()
-      });
+        io.to(roomId).emit('room_chat', {
+          type: 'system',
+          message: `🎉 ${player.nickname} 加入了房间`,
+          time: Date.now()
+        });
+      }
 
-      // 推送最新房间状态给所有人
       io.to(roomId).emit('room_state_update', { room: getRoomPublicData(result.room) });
-
-      // 更新大厅
       io.to('lobby').emit('room_list_update', { rooms: roomManager.getRoomList() });
 
-      console.log(`[房间] ${player.nickname} 加入房间 ${roomId}`);
+      console.log(`[房间] ${player.nickname} ${result.reconnected ? '重连' : '加入'}房间 ${roomId}`);
     });
 
     // ─── 离开房间 ────────────────────────────────────────────
     socket.on('leave_room', (data) => {
-      handleLeaveRoom(socket, data && data.roomId);
+      handleLeaveRoom(socket, data && data.roomId, false);
     });
 
     // ─── 房间聊天 ────────────────────────────────────────────
@@ -200,7 +192,6 @@ function registerSocketEvents(io) {
       if (!result.success) {
         socket.emit('error_msg', { message: result.error });
       } else {
-        // 更新大厅
         io.to('lobby').emit('room_list_update', { rooms: roomManager.getRoomList() });
       }
     });
@@ -213,7 +204,6 @@ function registerSocketEvents(io) {
       const answer = (data.answer || '').trim();
       if (!answer) return;
 
-      // 先在聊天区广播提交的答案（显示为尝试消息）
       io.to(player.roomId).emit('room_chat', {
         type: 'answer',
         socketId: socket.id,
@@ -228,7 +218,6 @@ function registerSocketEvents(io) {
       if (!result.success) {
         socket.emit('error_msg', { message: result.error });
       } else if (!result.correct) {
-        // 答错，只告知提交者
         socket.emit('answer_wrong', { answer });
       }
     });
@@ -241,14 +230,13 @@ function registerSocketEvents(io) {
       const room = roomManager.getRoom(player.roomId);
       if (!room) return;
 
-      // 任意玩家都可以请求提示
       const result = gameEngine.useHint(player.roomId, emitToRoom);
       if (!result.success) {
         socket.emit('error_msg', { message: result.error });
       }
     });
 
-    // ─── 再来一局 ─────────────────────────────────────────────
+    // ─── 修改房间名（仅房主） ──────────────────────────────────
     socket.on('rename_room', (data) => {
       const player = roomManager.getPlayer(socket.id);
       if (!player || !player.roomId) {
@@ -271,10 +259,10 @@ function registerSocketEvents(io) {
       });
 
       io.to('lobby').emit('room_list_update', { rooms: roomManager.getRoomList() });
-
       console.log(`[房间] ${player.nickname} 将房间 ${player.roomId} 改名为「${result.room.roomName}」`);
     });
 
+    // ─── 再来一局 ─────────────────────────────────────────────
     socket.on('play_again', () => {
       const player = roomManager.getPlayer(socket.id);
       if (!player || !player.roomId) return;
@@ -300,34 +288,40 @@ function registerSocketEvents(io) {
     socket.on('disconnect', () => {
       console.log(`[断开] ${socket.id} 已断开`);
       const player = roomManager.getPlayer(socket.id);
+
       if (player && player.roomId) {
-        handleLeaveRoom(socket, player.roomId);
+        if (player.navigatingToRoom) {
+          // 玩家正在跳转到房间页，保留房间（不广播离开消息）
+          roomManager.leaveRoom(socket.id, player.roomId, true /* preserveRoom */);
+          console.log(`[导航] ${player.nickname} 跳转中，房间 ${player.roomId} 已保留`);
+        } else {
+          // 正常断开：处理离开逻辑
+          handleLeaveRoom(socket, player.roomId, false);
+        }
       }
+
       roomManager.removePlayer(socket.id);
     });
 
     // ─── 辅助：处理玩家离开房间 ──────────────────────────────
-    function handleLeaveRoom(socket, roomId) {
+    function handleLeaveRoom(socket, roomId, preserveRoom = false) {
       if (!roomId) return;
       const player = roomManager.getPlayer(socket.id);
       const nickname = player ? player.nickname : '玩家';
 
-      // 游戏引擎处理断线
       const room = roomManager.getRoom(roomId);
       if (room && room.status === 'playing') {
         gameEngine.onPlayerDisconnect(roomId, socket.id, emitToRoom);
       }
 
-      const result = roomManager.leaveRoom(socket.id, roomId);
+      const result = roomManager.leaveRoom(socket.id, roomId, preserveRoom);
 
       socket.leave(roomId);
       socket.join('lobby');
 
       if (result.deleted) {
-        // 房间已删除
         io.to('lobby').emit('room_list_update', { rooms: roomManager.getRoomList() });
       } else if (result.success && result.room) {
-        // 通知房间内其他人
         io.to(roomId).emit('player_left', { socketId: socket.id, nickname });
         io.to(roomId).emit('room_chat', {
           type: 'system',
@@ -338,7 +332,6 @@ function registerSocketEvents(io) {
         io.to('lobby').emit('room_list_update', { rooms: roomManager.getRoomList() });
       }
 
-      // 给离开者推送大厅房间列表
       socket.emit('room_list_update', { rooms: roomManager.getRoomList() });
     }
   });

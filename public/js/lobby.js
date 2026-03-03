@@ -59,7 +59,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // 成功加入房间 → 跳转
   socket.on('room_joined', ({ room }) => {
     Session.saveRoom(room.roomId);
-    window.location.href = '/room.html';
+    // 告知服务器：我正在跳转到房间页，socket断开时不要删除房间
+    SocketClient.emit('navigating_to_room');
+    // 短暂延迟确保事件发送完毕后再跳转
+    setTimeout(() => {
+      window.location.href = '/room.html';
+    }, 150);
   });
 
   // ── 房间列表渲染 ─────────────────────────────────

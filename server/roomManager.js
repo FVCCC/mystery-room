@@ -3,16 +3,12 @@
  * 负责创建、加入、离开房间，以及维护房间状态
  */
 
-const { v4: uuidv4 } = (() => {
-  // 简单 UUID 生成，不依赖外部库
-  const uuidv4 = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-      const r = Math.random() * 16 | 0;
-      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-    });
-  };
-  return { v4: uuidv4 };
-})();
+const uuidv4 = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+};
 
 // 所有房间 Map<roomId, Room>
 const rooms = new Map();
@@ -43,9 +39,6 @@ function removePlayer(socketId) {
 
 /**
  * 创建新房间
- * @param {string} creatorSocketId - 房主 socketId
- * @param {object} options - { roomName, theme, maxPlayers }
- * @returns {object} room
  */
 function createRoom(creatorSocketId, options) {
   const { roomName, theme, maxPlayers = 4 } = options;
@@ -58,10 +51,12 @@ function createRoom(creatorSocketId, options) {
     theme,
     maxPlayers: Math.min(Math.max(parseInt(maxPlayers) || 4, 2), 6),
     ownerId: creatorSocketId,
+    ownerNickname: creator ? creator.nickname : '', // 记录房主昵称，用于重连时恢复身份
     players: [],
-    status: 'waiting', // waiting | playing | finished
+    status: 'waiting',
     gameState: null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    _preserveTimer: null
   };
 
   rooms.set(roomId, room);
@@ -70,17 +65,52 @@ function createRoom(creatorSocketId, options) {
 
 /**
  * 玩家加入房间
- * @returns {{ success: boolean, room?: object, error?: string }}
+ * 支持重连：同昵称玩家加入时更新 socketId 和 ownerId
  */
 function joinRoom(socketId, roomId) {
   const room = rooms.get(roomId);
   if (!room) return { success: false, error: '房间不存在' };
   if (room.status === 'playing') return { success: false, error: '游戏已开始，无法加入' };
-  if (room.players.length >= room.maxPlayers) return { success: false, error: '房间已满' };
   if (room.players.find(p => p.socketId === socketId)) return { success: false, error: '已在房间中' };
 
   const player = getPlayer(socketId);
   if (!player) return { success: false, error: '玩家信息不存在，请重新进入' };
+
+  // 清除保留定时器（有玩家加入了）
+  if (room._preserveTimer) {
+    clearTimeout(room._preserveTimer);
+    room._preserveTimer = null;
+  }
+
+  // ── 重连检测：同昵称玩家加入 ──────────────────────
+  const existingIdx = room.players.findIndex(p => p.nickname === player.nickname);
+  if (existingIdx !== -1) {
+    const existing = room.players[existingIdx];
+    const wasOwner = room.ownerId === existing.socketId;
+
+    // 用新 socketId 替换旧的
+    existing.socketId = socketId;
+    existing.score = existing.score || 0;
+
+    if (wasOwner) {
+      room.ownerId = socketId;
+      room.ownerNickname = player.nickname;
+    }
+
+    player.location = roomId;
+    player.roomId = roomId;
+    return { success: true, room, reconnected: true };
+  }
+
+  // ── 正常加入 ───────────────────────────────────────
+  if (room.players.length >= room.maxPlayers) return { success: false, error: '房间已满' };
+
+  // 如果房间是空的（保留状态），第一个加入的成为房主
+  const isFirst = room.players.length === 0;
+  if (isFirst) {
+    room.ownerId = socketId;
+    room.ownerNickname = player.nickname;
+  }
 
   room.players.push({
     socketId,
@@ -88,22 +118,20 @@ function joinRoom(socketId, roomId) {
     avatar: player.avatar,
     score: 0,
     answered: false,
-    isOwner: room.players.length === 0 // 第一个进入的是房主
+    isOwner: isFirst
   });
 
-  if (player) {
-    player.location = roomId;
-    player.roomId = roomId;
-  }
+  player.location = roomId;
+  player.roomId = roomId;
 
   return { success: true, room };
 }
 
 /**
  * 玩家离开房间
- * @returns {{ success: boolean, room?: object, deleted?: boolean }}
+ * @param {boolean} preserveRoom - 为 true 时即使房间空了也不立即删除（用于页面导航场景）
  */
-function leaveRoom(socketId, roomId) {
+function leaveRoom(socketId, roomId, preserveRoom = false) {
   const room = rooms.get(roomId);
   if (!room) return { success: false };
 
@@ -115,8 +143,20 @@ function leaveRoom(socketId, roomId) {
     player.roomId = null;
   }
 
-  // 房间为空，删除
+  // 房间为空
   if (room.players.length === 0) {
+    if (preserveRoom) {
+      // 保留房间 30 秒，等待玩家用新 socket 重连
+      if (room._preserveTimer) clearTimeout(room._preserveTimer);
+      room._preserveTimer = setTimeout(() => {
+        if (rooms.has(roomId) && rooms.get(roomId).players.length === 0) {
+          rooms.delete(roomId);
+          console.log(`[房间] ${roomId} 保留超时，已删除`);
+        }
+      }, 30000);
+      return { success: true, preserved: true };
+    }
+
     rooms.delete(roomId);
     return { success: true, deleted: true };
   }
@@ -124,6 +164,7 @@ function leaveRoom(socketId, roomId) {
   // 房主离开，转移房主
   if (room.ownerId === socketId && room.players.length > 0) {
     room.ownerId = room.players[0].socketId;
+    room.ownerNickname = room.players[0].nickname;
     room.players[0].isOwner = true;
   }
 
@@ -132,16 +173,19 @@ function leaveRoom(socketId, roomId) {
 
 /**
  * 获取房间公开信息列表（大厅显示）
+ * 只显示有玩家在的房间
  */
 function getRoomList() {
-  return Array.from(rooms.values()).map(room => ({
-    roomId: room.roomId,
-    roomName: room.roomName,
-    theme: room.theme,
-    currentPlayers: room.players.length,
-    maxPlayers: room.maxPlayers,
-    status: room.status
-  }));
+  return Array.from(rooms.values())
+    .filter(room => room.players.length > 0) // 不显示保留中的空房间
+    .map(room => ({
+      roomId: room.roomId,
+      roomName: room.roomName,
+      theme: room.theme,
+      currentPlayers: room.players.length,
+      maxPlayers: room.maxPlayers,
+      status: room.status
+    }));
 }
 
 /**
@@ -164,10 +208,6 @@ function updateRoomGameState(roomId, gameState) {
 
 /**
  * 修改房间名称（仅房主可操作）
- * @param {string} roomId
- * @param {string} socketId - 操作者 socketId
- * @param {string} newName - 新房间名
- * @returns {{ success: boolean, room?: object, error?: string }}
  */
 function renameRoom(roomId, socketId, newName) {
   const room = rooms.get(roomId);
