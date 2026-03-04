@@ -306,12 +306,14 @@ socket.on('trpg_campaign_created', ({ campaign: c }) => {
     document.getElementById('playerWaiting').style.display = 'none';
     document.getElementById('waitingDesc').textContent = '⚔️ 战役已就绪，邀请伙伴后点击「开始冒险」';
     // 显示开始按钮（顶栏）
-    document.getElementById('startBtn').style.display = 'block';
-    // 隐藏场景列表，改为显示确认区域
+    // 隐藏场景列表，把按钮变为「开始冒险」（遮罩层内可直接点击）
     const scenarioList = document.getElementById('scenarioList');
     if (scenarioList) scenarioList.innerHTML = `<div style="padding:16px;text-align:center;color:#7cd67c;font-size:.9rem">✅ 已选择「${c.title}」</div>`;
-    document.getElementById('startCampaignBtn').textContent = '已选定，点击顶部「开始冒险」';
-    document.getElementById('startCampaignBtn').disabled = true;
+    const sb = document.getElementById('startCampaignBtn');
+    sb.textContent = '▶ 开始冒险！';
+    sb.disabled = false;
+    sb.onclick = startPlay;
+    document.getElementById('waitingDesc').textContent = '⚔️ 战役已就绪，全员加入后点击开始冒险';
   } else {
     // 普通玩家：等待房主开始
     document.getElementById('ownerControls').style.display = 'none';
