@@ -102,6 +102,31 @@ function joinRoom(socketId, roomId) {
     return { success: true, room, reconnected: true };
   }
 
+  // ── 原房主重连（曾导航离开导致其 slot 被删除，但 ownerNickname 保留） ──
+  if (player.nickname === room.ownerNickname) {
+    // 取消宽限期计时器（房主回来了）
+    if (room._ownerTimer) {
+      clearTimeout(room._ownerTimer);
+      room._ownerTimer = null;
+    }
+    // 恢复房主身份（可超过人数上限让房主回来）
+    room.ownerId = socketId;
+    room.players.unshift({
+      socketId,
+      nickname: player.nickname,
+      avatar: player.avatar,
+      score: 0,
+      answered: false,
+      isOwner: true
+    });
+    // 去掉其他人的房主标记
+    for (let i = 1; i < room.players.length; i++) room.players[i].isOwner = false;
+    player.location = roomId;
+    player.roomId = roomId;
+    console.log(`[房间] ${player.nickname} 原房主重连，恢复房主权`);
+    return { success: true, room, reconnected: true };
+  }
+
   // ── 正常加入 ───────────────────────────────────────
   if (room.players.length >= room.maxPlayers) return { success: false, error: '房间已满' };
 
@@ -163,9 +188,26 @@ function leaveRoom(socketId, roomId, preserveRoom = false) {
 
   // 房主离开，转移房主
   if (room.ownerId === socketId && room.players.length > 0) {
-    room.ownerId = room.players[0].socketId;
-    room.ownerNickname = room.players[0].nickname;
-    room.players[0].isOwner = true;
+    if (preserveRoom) {
+      // 导航中：不立即转移房主，保留 ownerNickname 供重连识别
+      // 15 秒宽限期后若原房主未重连才真正转移
+      if (room._ownerTimer) clearTimeout(room._ownerTimer);
+      room._ownerTimer = setTimeout(() => {
+        const r = rooms.get(roomId);
+        if (r && r.ownerId === socketId && r.players.length > 0) {
+          r.ownerId = r.players[0].socketId;
+          r.ownerNickname = r.players[0].nickname;
+          r.players[0].isOwner = true;
+          console.log(`[房间] ${roomId} 房主重连超时，转移到 ${r.players[0].nickname}`);
+        }
+        if (r) r._ownerTimer = null;
+      }, 15000);
+    } else {
+      // 永久离开：立即转移
+      room.ownerId = room.players[0].socketId;
+      room.ownerNickname = room.players[0].nickname;
+      room.players[0].isOwner = true;
+    }
   }
 
   return { success: true, room };

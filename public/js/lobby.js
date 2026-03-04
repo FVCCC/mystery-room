@@ -74,8 +74,9 @@ document.addEventListener('DOMContentLoaded', () => {
     Session.saveRoom(room.roomId);
     SocketClient.emit('navigating_to_room');
     setTimeout(() => {
-      // 跑团房间进角色创建页，普通房间进密室页
-      window.location.href = wantTrpg ? '/character-create.html' : '/room.html';
+      // 跑团房间进角色创建页（房主创建或其他玩家加入DND房间都跳转）
+      const isTrpg = wantTrpg || room.theme === 'DND跑团';
+      window.location.href = isTrpg ? '/character-create.html' : '/room.html';
     }, 150);
   });
 
